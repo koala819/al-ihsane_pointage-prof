@@ -3,12 +3,33 @@ import { Resend } from 'resend'
 
 const resend = new Resend(import.meta.env.RESEND_API_KEY)
 const MON_MAIL = 'ton@mail.com'
+const statutsAutorises = ['present', 'absent', 'remplacement', 'non_assigne']
+const sessionsAutorisees = ['matin', 'apres_midi']
 
 export async function POST({ request }) {
   const { token, pointages } = await request.json()
 
   if (!token || !Array.isArray(pointages)) {
     return new Response(JSON.stringify({ error: 'Payload invalide' }), { status: 400 })
+  }
+
+  //Validation des données métier
+  if (pointages.length === 0) {
+    return new Response(JSON.stringify({ error: 'Aucun pointage' }), { status: 400 })
+  }
+
+  for (const p of pointages) {
+    if (!statutsAutorises.includes(p.statut)) {
+      return new Response(JSON.stringify({ error: 'Statut invalide' }), { status: 400 })
+    }
+
+    if (!sessionsAutorisees.includes(p.session)) {
+      return new Response(JSON.stringify({ error: 'Session invalide' }), { status: 400 })
+    }
+
+    if (isNaN(new Date(p.date))) {
+      return new Response(JSON.stringify({ error: 'Date invalide' }), { status: 400 })
+    }
   }
 
   const { data: prof, error } = await supabase
@@ -27,18 +48,12 @@ export async function POST({ request }) {
   .eq('actif', true)
   .maybeSingle()
 
-if (periodeError || !periode) {
-  return new Response(JSON.stringify({ error: 'Période introuvable' }), { status: 404 })
-}
-
-
+  if (periodeError || !periode) {
+    return new Response(JSON.stringify({ error: 'Période introuvable' }), { status: 404 })
+  }
 
   if (prof.valid_form) {
     return new Response(JSON.stringify({ error: 'Formulaire déjà validé' }), { status: 403 })
-  }
-
-  if (pointages.length === 0) {
-    return new Response(JSON.stringify({ error: 'Aucun pointage' }), { status: 400 })
   }
 
   // Upsert de tous les pointages
@@ -60,7 +75,11 @@ if (periodeError || !periode) {
   }
 
   // Marquer comme validé
-  await supabase.from('paie.profs').update({ valid_form: true }).eq('id', prof.id)
+  const { error: updateError } = await supabase.from('paie.profs').update({ valid_form: true }).eq('id', prof.id)
+
+  if (updateError) {
+    return new Response(JSON.stringify({ error: 'Erreur mise à jour avant envoi du mail erreur: ' + updateError.message }), { status: 500 })
+  }
 
   // Résumé pour le mail
   const presents = pointages.filter(p => p.statut === 'present').length
@@ -83,12 +102,16 @@ Détail :
 ${lignes}
   `.trim()
 
-  await resend.emails.send({
-    from: 'ecole@tondomaine.com',
-    to: [prof.mail, MON_MAIL],
-    subject: `Pointage ${prof.prenom} ${prof.nom} — ${periode.nom}`,
-    text: corps
-  })
+  try {
+    await resend.emails.send({
+      from: 'ecole@tondomaine.com',
+      to: [prof.mail, MON_MAIL],
+      subject: `Pointage ${prof.prenom} ${prof.nom} — ${periode.nom}`,
+      text: corps
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: 'Erreur envoi mail:' + error.message }), { status: 500 })
+  }
 
   return new Response(JSON.stringify({ ok: true }), { status: 200 })
 }
