@@ -1,0 +1,197 @@
+---
+export const prerender = false
+
+const accessToken = Astro.url.searchParams.get('token')?.trim() ?? ''
+const expectedToken = import.meta.env.MAIL_CAMPAIGN_TOKEN
+const isAllowed = Boolean(expectedToken) && accessToken === expectedToken
+---
+
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Envoi auto des mails profs</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 1.25rem; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f7f7f5; color: #1f2937; }
+      .container { max-width: 840px; margin: 0 auto; }
+      .card { background: #fff; border: 1px solid #d7d7d4; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+      h1 { margin: 0 0 0.75rem; font-size: 1.4rem; }
+      .muted { color: #5f5a50; }
+      .error { color: #a32d2d; font-weight: 600; }
+      .ok { color: #0f6e56; font-weight: 600; }
+      .status { white-space: pre-line; line-height: 1.45; }
+      .mail-preview { white-space: pre-line; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.9rem; margin-top: 0.8rem; }
+      button {
+        border: 1px solid #b8b8b3;
+        background: #fff;
+        color: #111827;
+        border-radius: 8px;
+        padding: 0.65rem 1rem;
+        font-size: 0.95rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      {
+        !isAllowed ? (
+          <div class="card">
+            <h1>Acces refuse</h1>
+            <p class="error">Token invalide. Ajoute le token dans l'URL.</p>
+          </div>
+        ) : (
+          <>
+            <div class="card">
+              <h1>Campagne d'envoi des mails profs</h1>
+              <p class="muted">Envoi sequentiel avec pause de 5 minutes entre chaque mail.</p>
+              <button id="start-btn" type="button">Demarrer l'envoi</button>
+            </div>
+
+            <div class="card">
+              <h2>Statut</h2>
+              <p id="status" class="status muted">En attente...</p>
+            </div>
+
+            <div class="card">
+              <h2>Contenu du mail (sans token visible)</h2>
+              <div id="mail-preview" class="mail-preview muted">Aucun mail en cours.</div>
+            </div>
+            <div id="campaign-meta" data-token={accessToken} hidden></div>
+          </>
+        )
+      }
+    </div>
+
+    {
+      isAllowed && (
+        <script is:inline>
+          const campaignToken = document.getElementById('campaign-meta')?.dataset?.token || '';
+          const pauseSeconds = 5 * 60;
+          const statusEl = document.getElementById('status');
+          const previewEl = document.getElementById('mail-preview');
+          const startBtn = document.getElementById('start-btn');
+
+          function setStatus(text, kind = 'muted') {
+            statusEl.textContent = text;
+            statusEl.className = `status ${kind}`;
+          }
+
+          function buildPreview(prof) {
+            const genre = prof.genre || 'Monsieur';
+            return [
+              'Sujet: Pointage des cours printemps 2026',
+              '',
+              `Bonjour ${genre} ${prof.prenom}`,
+              '',
+              'Vous remplir votre pointage pour la periode des cours au printemps 2026 en cliquant sur le lien ci-dessous :',
+              '',
+              'https://pointer-cours.netlify.app/?token=[MASQUE]',
+              '',
+              'Ce lien est personnel. Merci de ne pas le partager.',
+              '',
+              'Apres validation, votre pointage sera enregistre automatiquement.',
+              '',
+              'BarakAllahou fik,',
+              "L'equipe Al'Ihsane",
+              '',
+              `Le mail est envoye a: ${prof.mail}`
+            ].join('\n');
+          }
+
+          async function fetchQueue() {
+            const res = await fetch('/api/mail-campaign', {
+              headers: {
+                'x-campaign-token': campaignToken
+              }
+            });
+
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error || 'Erreur chargement file d envoi');
+            }
+
+            return res.json();
+          }
+
+          async function sendOne(profId) {
+            const res = await fetch('/api/mail-campaign', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-campaign-token': campaignToken
+              },
+              body: JSON.stringify({ profId })
+            });
+
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              throw new Error(body.error || 'Erreur envoi mail');
+            }
+          }
+
+          function waitWithCountdown(totalSeconds) {
+            return new Promise((resolve) => {
+              let remaining = totalSeconds;
+              setStatus(`Pause anti-spam: ${remaining}s restantes...`, 'muted');
+              const timer = setInterval(() => {
+                remaining -= 1;
+                if (remaining <= 0) {
+                  clearInterval(timer);
+                  setStatus('Fin de pause. Envoi suivant...', 'muted');
+                  resolve();
+                  return;
+                }
+                setStatus(`Pause anti-spam: ${remaining}s restantes...`, 'muted');
+              }, 1000);
+            });
+          }
+
+          async function runCampaign() {
+            startBtn.disabled = true;
+            try {
+              setStatus('Recuperation de la file des profs...', 'muted');
+              const { profs } = await fetchQueue();
+
+              if (!Array.isArray(profs) || profs.length === 0) {
+                setStatus('Aucun prof a traiter. Tous les mails semblent deja envoyes.', 'ok');
+                previewEl.textContent = 'Aucun mail en cours.';
+                return;
+              }
+
+              for (let index = 0; index < profs.length; index += 1) {
+                const prof = profs[index];
+                previewEl.textContent = buildPreview(prof);
+                setStatus(`Envoi ${index + 1}/${profs.length} vers ${prof.mail}...`, 'muted');
+
+                await sendOne(prof.id);
+                setStatus(`OK ${index + 1}/${profs.length} - mail envoye a ${prof.mail}`, 'ok');
+
+                const hasNext = index < profs.length - 1;
+                if (hasNext) {
+                  await waitWithCountdown(pauseSeconds);
+                }
+              }
+
+              setStatus('Campagne terminee avec succes.', 'ok');
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Erreur inconnue';
+              setStatus(`Echec de la campagne: ${message}\nArret immediat.`, 'error');
+            } finally {
+              startBtn.disabled = false;
+            }
+          }
+
+          startBtn?.addEventListener('click', runCampaign);
+        </script>
+      )
+    }
+  </body>
+</html>
