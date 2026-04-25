@@ -1,6 +1,7 @@
+import type { APIContext } from 'astro'
 import { supabase } from '../../lib/supabase.js'
 
-export async function GET({ request }) {
+export async function GET({ request }: APIContext): Promise<Response> {
   const url = new URL(request.url)
   const token = url.searchParams.get('token')
 
