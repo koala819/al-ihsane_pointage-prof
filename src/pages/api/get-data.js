@@ -4,9 +4,12 @@ export async function GET({ request }) {
   const url = new URL(request.url)
   const token = url.searchParams.get('token')
 
-  if (!token) {
-    return new Response(JSON.stringify({ error: 'Token manquant' }), { status: 400 })
-  }
+  if (!token || token.length < 10) {
+  return new Response(
+    JSON.stringify({ error: 'Token invalide' }),
+    { status: 400 }
+  )
+}
 
   const { data: prof, error } = await supabase
     .from('paie.profs')
@@ -43,7 +46,9 @@ export async function GET({ request }) {
   prof,
   periode,
   pointages,
-  hasSubmitted: prof.valid_form
+  hasSubmitted: prof.valid_form,
+  hasPointages: pointages.length > 0,
+  fullName: `${prof.prenom} ${prof.nom}`
 }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' }
