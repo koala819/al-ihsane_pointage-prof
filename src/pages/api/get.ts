@@ -3,6 +3,10 @@ import { supabaseServer } from '../../lib/supabase-server'
 
 export const prerender = false
 
+function normalizeSession(session: string): 'matin' | 'apres_midi' {
+  return session === 'apm' ? 'apres_midi' : 'matin'
+}
+
 export async function GET({ url }: APIContext): Promise<Response> {
   const token = url.searchParams.get('token')
 
@@ -44,15 +48,21 @@ export async function GET({ url }: APIContext): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Erreur lors de la récupération des pointages' }), { status: 500 })
   }
 
-  return new Response(JSON.stringify({
-  prof,
-  periode,
-  pointages,
-  hasSubmitted: prof.valid_form,
-  hasPointages: pointages.length > 0,
-  fullName: `${prof.prenom} ${prof.nom}`
-}), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' }
-  })
+  return new Response(
+    JSON.stringify({
+      prof,
+      periode,
+      pointages: pointages.map((p) => ({
+        ...p,
+        session: normalizeSession(p.session)
+      })),
+      hasSubmitted: prof.valid_form,
+      hasPointages: pointages.length > 0,
+      fullName: `${prof.prenom} ${prof.nom}`
+    }),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }
+  )
 }

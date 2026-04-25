@@ -1,6 +1,20 @@
 export type Session = 'matin' | 'apres_midi'
 export type Statut = 'non_assigne' | 'present' | 'absent' | 'remplacement'
 
+export type SessionInput = 'matin' | 'apres_midi' | 'apm'
+
+type Pointage = {
+  date: string
+  session: SessionInput
+  statut: Statut
+}
+
+export type SavePayload = {
+  token?: string
+  pointages?: Pointage[]
+}
+
+
 type DayItem = {
   date: string
   jour: 'Samedi' | 'Dimanche'

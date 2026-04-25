@@ -71,7 +71,9 @@ function updateSummary(): void {
 
 function pointagesFromEtat(): Pointage[] {
   return Object.entries(etat).map(([key, statut]) => {
-    const [date, session] = key.split('_')
+    const idx = key.indexOf('_')
+    const date = key.slice(0, idx)
+    const session = key.slice(idx + 1)
     return { date, session: session as Session, statut: statut as Statut }
   })
 }
@@ -81,7 +83,7 @@ async function sauvegarder(token: string): Promise<void> {
   btn.disabled = true
   btn.textContent = 'Enregistrement...'
 
-  const res = await fetch('/api/save', {
+  const res = await fetch('/api/post', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token, pointages: pointagesFromEtat() })

@@ -71,6 +71,10 @@ let pageData: null | {
   avatar: string
 } = null
 
+function normalizeSession(session: string): Session {
+  return session === 'apm' ? 'apres_midi' : 'matin'
+}
+
 if (!token) {
   errorMessage = 'Lien invalide.'
 } else {
@@ -108,7 +112,10 @@ if (!token) {
         pageData = {
           prof,
           periode,
-          pointages: pointages ?? [],
+          pointages: (pointages ?? []).map((p) => ({
+            ...p,
+            session: normalizeSession(p.session)
+          })),
           weeks: buildWeekendBlocks(getWeekendDates(periode.date_debut, periode.date_fin)),
           periodeLabel: formatPeriodeLabel(periode.date_debut, periode.date_fin),
           avatar: `${prof.prenom[0] ?? ''}${prof.nom[0] ?? ''}`.toUpperCase()
