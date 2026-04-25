@@ -1,0 +1,14 @@
+---
+const { periodeLabel } = Astro.props as { periodeLabel: string }
+---
+
+<div id="validated-card" class="card">
+  <div class="header">
+    <h1>Pointage validé</h1>
+    <p>{periodeLabel}</p>
+  </div>
+  <div class="deja-valide">
+    Cette période a déjà été validée.<br />
+    Il est impossible de la modifier. Veuillez contacter l'administrateur.
+  </div>
+</div>

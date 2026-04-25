@@ -1,5 +1,122 @@
 ---
 // Ce bloc s'exécute côté serveur - rien de sensible n'est exposé
+import { supabaseServer } from '../lib/supabase-server'
+import PointageMainCard from '../components/PointageMainCard.astro'
+import PointageValidatedCard from '../components/PointageValidatedCard.astro'
+import type { Session, SessionDate, Statut } from '../lib/types'
+
+export const prerender = false
+
+function getWeekendDates(dateDebut: string, dateFin: string): SessionDate[] {
+  const toLocalYMD = (date: Date): string => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  const dates: SessionDate[] = []
+  const current = new Date(`${dateDebut}T00:00:00`)
+  const end = new Date(`${dateFin}T00:00:00`)
+  while (current <= end) {
+    const day = current.getDay()
+    if (day === 6 || day === 0) {
+      dates.push({
+        date: toLocalYMD(current),
+        jour: day === 6 ? 'Samedi' : 'Dimanche'
+      })
+    }
+    current.setDate(current.getDate() + 1)
+  }
+  return dates
+}
+
+function buildWeekendBlocks(dates: SessionDate[]) {
+  const weekends: { label: string; days: SessionDate[] }[] = []
+
+  for (let i = 0; i < dates.length; i += 2) {
+    const days = dates.slice(i, i + 2)
+    const first = new Date(`${days[0].date}T00:00:00`)
+    const second = days[1] ? new Date(`${days[1].date}T00:00:00`) : null
+
+    const firstDay = first.toLocaleDateString('fr-FR', { day: 'numeric' })
+    const firstMonth = first.toLocaleDateString('fr-FR', { month: 'long' })
+
+    const label = second
+      ? `Weekend du ${firstDay}-${second.toLocaleDateString('fr-FR', { day: 'numeric' })} ${firstMonth}`
+      : `Weekend du ${firstDay} ${firstMonth}`
+
+    weekends.push({ label, days })
+  }
+
+  return weekends
+}
+
+function formatPeriodeLabel(dateDebut: string, dateFin: string): string {
+  const debut = new Date(`${dateDebut}T00:00:00`)
+  const fin = new Date(`${dateFin}T00:00:00`)
+  const debutTxt = debut.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')
+  const finTxt = fin.toLocaleDateString('fr-FR', { month: 'long' })
+  return `Vacances ${debutTxt}. - ${finTxt} ${fin.getFullYear()}`
+}
+
+const token = Astro.url.searchParams.get('token')?.trim() ?? ''
+let errorMessage = ''
+let pageData: null | {
+  prof: { prenom: string; nom: string; niveau?: string | null; valid_form: boolean }
+  periode: { nom: string; date_debut: string; date_fin: string }
+  pointages: Array<{ date: string; session: Session; statut: Statut }>
+  weeks: { label: string; days: SessionDate[] }[]
+  periodeLabel: string
+  avatar: string
+} = null
+
+if (!token) {
+  errorMessage = 'Lien invalide.'
+} else {
+  const { data: prof, error } = await supabaseServer
+    .schema('paie')
+    .from('profs')
+    .select('id, nom, prenom, niveau, valid_form')
+    .eq('token', token)
+    .maybeSingle()
+
+  if (error || !prof) {
+    errorMessage = 'Prof introuvable'
+  } else {
+    const { data: periode, error: periodeError } = await supabaseServer
+      .schema('paie')
+      .from('periodes')
+      .select('id, nom, date_debut, date_fin')
+      .eq('actif', true)
+      .maybeSingle()
+
+    if (periodeError || !periode) {
+      errorMessage = 'Période introuvable'
+    } else {
+      const { data: pointages, error: pointagesError } = await supabaseServer
+        .schema('paie')
+        .from('pointages')
+        .select('date, session, statut')
+        .eq('prof_id', prof.id)
+        .eq('periode', periode.id)
+        .order('date', { ascending: true })
+
+      if (pointagesError) {
+        errorMessage = 'Erreur lors de la récupération des pointages'
+      } else {
+        pageData = {
+          prof,
+          periode,
+          pointages: pointages ?? [],
+          weeks: buildWeekendBlocks(getWeekendDates(periode.date_debut, periode.date_fin)),
+          periodeLabel: formatPeriodeLabel(periode.date_debut, periode.date_fin),
+          avatar: `${prof.prenom[0] ?? ''}${prof.nom[0] ?? ''}`.toUpperCase()
+        }
+      }
+    }
+  }
+}
 ---
 
 <!DOCTYPE html>
@@ -7,7 +124,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pointage - Ecole de la mosquée Al'Ihsane</title>
+    <title>Pointage des cours - Al'Ihsane</title>
     <style is:global>
       :root { color-scheme: light; }
       * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,8 +152,42 @@
       .sum-card { background: #e8e6e1; border-radius: 8px; padding: 0.6rem 0.75rem; text-align: center; }
       .sum-n { font-size: 22px; font-weight: 600; }
       .help-text { text-align: center; font-size: 13px; color: #4b5563; margin: 0.5rem 1.25rem 0.55rem; }
-      .save-btn { margin: 0 1.25rem 1rem; display: block; width: calc(100% - 2.5rem); padding: 9px 12px; background: transparent; color: #111827; border: 1px solid #b8b8b3; border-radius: 8px; font-size: 18px; cursor: pointer; font-weight: 700; }
-      .save-btn:disabled { color: #6b7280; cursor: not-allowed; }
+      .save-btn {
+        margin: 0 1.25rem 1rem;
+        display: block;
+        width: calc(100% - 2.5rem);
+        padding: 11px 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #f4f4f2 100%);
+        color: #111827;
+        border: 1px solid #b8b8b3;
+        border-radius: 10px;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        cursor: pointer;
+        transition: transform 0.08s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+        box-shadow: 0 1px 1px rgba(17, 24, 39, 0.06);
+      }
+      .save-btn:hover {
+        background: #ffffff;
+        box-shadow: 0 3px 10px rgba(17, 24, 39, 0.08);
+      }
+      .save-btn:active {
+        transform: translateY(1px);
+        box-shadow: 0 1px 3px rgba(17, 24, 39, 0.08);
+      }
+      .save-btn:focus-visible {
+        outline: 3px solid rgba(29, 158, 117, 0.25);
+        outline-offset: 2px;
+      }
+      .save-btn:disabled {
+        color: #6b7280;
+        background: #ececea;
+        border-color: #cfcfcb;
+        box-shadow: none;
+        cursor: not-allowed;
+        transform: none;
+      }
       #msg-erreur { color: #a32d2d; text-align: center; padding: 0.5rem 1.25rem; font-size: 13px; display: none; }
       #msg-succes { background: #e1f5ee; color: #0f6e56; text-align: center; padding: 1rem; font-size: 14px; border-radius: 8px; display: none; margin: 1rem; }
       .deja-valide { text-align: center; padding: 2rem 1.25rem; color: #888; font-size: 14px; }
@@ -44,13 +195,32 @@
   </head>
   <body>
     <div class="wrap">
-      <div id="loading" style="text-align:center;padding:3rem;color:#888">Chargement...</div>
-      <div id="app" style="display:none"></div>
+      {
+        errorMessage ? (
+          <div class="card">
+            <div class="header">
+              <h1>Erreur</h1>
+              <p>Pointage des cours</p>
+            </div>
+            <div class="deja-valide">{errorMessage}</div>
+          </div>
+        ) : pageData?.prof.valid_form ? (
+          <PointageValidatedCard periodeLabel={`Période ${pageData.periode.nom}`} />
+        ) : (
+          <PointageMainCard
+            token={token}
+            periodeLabel={pageData!.periode.nom}
+            profName={`${pageData!.prof.prenom} ${pageData!.prof.nom}`}
+            profLevel={`niveau ${pageData!.prof.niveau ?? ''}`}
+            avatar={pageData!.avatar}
+            weeks={pageData!.weeks}
+            initialStatuts={Object.fromEntries(
+              pageData!.pointages.map((p) => [`${p.date}_${p.session}`, p.statut])
+            )}
+          />
+        )
+      }
     </div>
-    <script type="module">
-      import { initUI } from '/src/lib/ui.ts'
-
-      void initUI()
-    </script>
+    {!errorMessage && !pageData?.prof.valid_form && <script type="module" src="/src/lib/pointage-controller.ts"></script>}
   </body>
 </html>

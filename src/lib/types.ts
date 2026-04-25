@@ -1,6 +1,16 @@
 export type Session = 'matin' | 'apres_midi'
 export type Statut = 'non_assigne' | 'present' | 'absent' | 'remplacement'
 
+type DayItem = {
+  date: string
+  jour: 'Samedi' | 'Dimanche'
+}
+
+export type Week = {
+  label: string
+  days: DayItem[]
+}
+
 export type Pointage = {
   date: string
   session: Session

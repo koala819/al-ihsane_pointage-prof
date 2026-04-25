@@ -1,0 +1,88 @@
+---
+import type { Session, Statut, Week } from '../lib/types'
+
+const {
+  token,
+  periodeLabel,
+  profName,
+  profLevel,
+  avatar,
+  weeks,
+  initialStatuts
+} = Astro.props as {
+  token: string
+  periodeLabel: string
+  profName: string
+  profLevel: string
+  avatar: string
+  weeks: Week[]
+  initialStatuts: Record<string, Statut>
+}
+
+function labelSession(session: Session, statut: Statut): string {
+  const s = session === 'matin' ? 'Matin' : 'Après-midi'
+  if (statut === 'non_assigne') return s
+  if (statut === 'present') return `${s} ✓`
+  if (statut === 'absent') return `${s} ✗`
+  return `${s} ↔`
+}
+---
+
+<div id="main-card" class="card" data-token={token}>
+  <div class="header">
+    <h1>Pointage des cours</h1>
+    <p>{periodeLabel}</p>
+  </div>
+
+  <div class="prof-badge">
+    <div class="avatar">{avatar}</div>
+    <div>
+      <div style="font-size:14px;font-weight:500">{profName}</div>
+      <div style="font-size:12px;color:#888">{profLevel}</div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#1D9E75"></div> Présent</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#E24B4A"></div> Absent</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#EF9F27"></div> Remplacement</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#CFCFCB"></div> Non assigné</div>
+  </div>
+
+  <div id="weeks-root">
+    {
+      weeks.map((week) => (
+        <div class="week-block">
+          <div class="week-label">{week.label}</div>
+          {week.days.map((d) => {
+            const statMatin = initialStatuts[`${d.date}_matin`] ?? 'non_assigne'
+            const statApm = initialStatuts[`${d.date}_apres_midi`] ?? 'non_assigne'
+            return (
+              <div class="day-row">
+                <div class="day-name">{d.jour}</div>
+                <div class="sessions">
+                  <div class="sess js-sess" data-date={d.date} data-session="matin" data-statut={statMatin}>
+                    {labelSession('matin', statMatin)}
+                  </div>
+                  <div class="sess js-sess" data-date={d.date} data-session="apres_midi" data-statut={statApm}>
+                    {labelSession('apres_midi', statApm)}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ))
+    }
+  </div>
+
+  <div class="summary">
+    <div class="sum-card"><div class="sum-n" style="color:#0F6E56" id="cnt-p">0</div><div style="font-size:11px;color:#888;margin-top:2px">Présences</div></div>
+    <div class="sum-card"><div class="sum-n" style="color:#A32D2D" id="cnt-a">0</div><div style="font-size:11px;color:#888;margin-top:2px">Absences</div></div>
+    <div class="sum-card"><div class="sum-n" style="color:#854F0B" id="cnt-r">0</div><div style="font-size:11px;color:#888;margin-top:2px">Remplacements</div></div>
+  </div>
+
+  <div id="msg-erreur">Une erreur est survenue, réessaie.</div>
+  <div id="msg-succes">Pointage enregistré ! Un mail de confirmation t'a été envoyé.</div>
+  <button class="save-btn" id="btn-save">Enregistrer ↗</button>
+</div>
