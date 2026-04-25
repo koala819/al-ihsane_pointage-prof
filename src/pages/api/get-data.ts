@@ -1,29 +1,29 @@
 import type { APIContext } from 'astro'
-import { supabase } from '../../lib/supabase.js'
+import { supabaseServer } from '../../lib/supabase-server'
 
-export async function GET({ request }: APIContext): Promise<Response> {
-  const url = new URL(request.url)
+export const prerender = false
+
+export async function GET({ url }: APIContext): Promise<Response> {
   const token = url.searchParams.get('token')
 
-  if (!token || token.length < 10) {
-  return new Response(
-    JSON.stringify({ error: 'Token invalide' }),
-    { status: 400 }
-  )
-}
+  if (!token?.trim()) {
+    return new Response(JSON.stringify({ error: 'Token invalide' }), { status: 400 })
+  }
 
-  const { data: prof, error } = await supabase
-    .from('paie.profs')
+  const { data: prof, error } = await supabaseServer
+    .schema('paie')
+    .from('profs')
     .select('id, nom, prenom, niveau, salaire, mail, valid_form')
     .eq('token', token)
-    .single()
+    .maybeSingle()
 
   if (error || !prof) {
     return new Response(JSON.stringify({ error: 'Prof introuvable' }), { status: 404 })
   }
 
-  const { data: periode, error: periodeError } = await supabase
-    .from('paie.periodes')
+  const { data: periode, error: periodeError } = await supabaseServer
+    .schema('paie')
+    .from('periodes')
     .select('id, nom, date_debut, date_fin')
     .eq('actif', true)
     .maybeSingle()
@@ -32,11 +32,12 @@ export async function GET({ request }: APIContext): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Période introuvable' }), { status: 404 })
   }
 
-  const { data: pointages, error: pointagesError } = await supabase
-    .from('paie.pointages')
+  const { data: pointages, error: pointagesError } = await supabaseServer
+    .schema('paie')
+    .from('pointages')
     .select('date, session, statut')
     .eq('prof_id', prof.id)
-    .eq('periode_id', periode.id)
+    .eq('periode', periode.id)
     .order('date', { ascending: true })
 
   if (pointagesError) {

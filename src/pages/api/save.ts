@@ -1,5 +1,5 @@
 import type { APIContext } from 'astro'
-import { supabase } from '../../lib/supabase.js'
+import { supabaseServer } from '../../lib/supabase-server'
 import { Resend } from 'resend'
 
 type Statut = 'present' | 'absent' | 'remplacement' | 'non_assigne'
@@ -51,8 +51,9 @@ export async function POST({ request }: APIContext): Promise<Response> {
     }
   }
 
-  const { data: prof, error } = await supabase
-    .from('paie.profs')
+  const { data: prof, error } = await supabaseServer
+    .schema('paie')
+    .from('profs')
     .select('id, nom, prenom, mail, valid_form')
     .eq('token', token)
     .maybeSingle()
@@ -61,8 +62,9 @@ export async function POST({ request }: APIContext): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Prof introuvable' }), { status: 404 })
   }
 
-  const { data: periode, error: periodeError } = await supabase
-    .from('paie.periodes')
+  const { data: periode, error: periodeError } = await supabaseServer
+    .schema('paie')
+    .from('periodes')
     .select('id, nom')
     .eq('actif', true)
     .maybeSingle()
@@ -78,24 +80,26 @@ export async function POST({ request }: APIContext): Promise<Response> {
   // Upsert de tous les pointages
   const rows = pointages.map((p) => ({
     prof_id: prof.id,
-    periode_id: periode.id,
+    periode: periode.id,
     date: p.date,
     session: p.session,
     statut: p.statut,
     updated_at: new Date().toISOString()
   }))
 
-  const { error: upsertError } = await supabase
-    .from('paie.pointages')
-    .upsert(rows, { onConflict: 'prof_id,periode_id,date,session' })
+  const { error: upsertError } = await supabaseServer
+    .schema('paie')
+    .from('pointages')
+    .upsert(rows, { onConflict: 'prof_id,periode,date,session' })
 
   if (upsertError) {
     return new Response(JSON.stringify({ error: 'Erreur sauvegarde' }), { status: 500 })
   }
 
   // Marquer comme valide
-  const { error: updateError } = await supabase
-    .from('paie.profs')
+  const { error: updateError } = await supabaseServer
+    .schema('paie')
+    .from('profs')
     .update({ valid_form: true })
     .eq('id', prof.id)
 
