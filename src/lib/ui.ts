@@ -1,53 +1,10 @@
-type Session = 'matin' | 'apres_midi'
-type Statut = 'non_assigne' | 'present' | 'absent' | 'remplacement'
+import type { GetDataResponse, Pointage, Session, SessionDate, Statut } from './types'
 
-type Pointage = {
-  date: string
-  session: Session
-  statut: Statut
-}
-
-type Prof = {
-  prenom: string
-  nom: string
-  niveau?: string | null
-  valid_form: boolean
-}
-
-type GetDataResponse =
-  | {
-      error: string
-    }
-  | {
-      prof: Prof
-      periode: {
-        nom: string
-        date_debut: string
-        date_fin: string
-      }
-      pointages: Pointage[]
-    }
-
-type SessionDate = {
-  date: string
-  jour: 'Samedi' | 'Dimanche'
-}
-
-type EtatPointage = Record<string, Statut>
-
-const cycleStatuts: Statut[] = ['non_assigne', 'present', 'absent', 'remplacement']
-const etat: EtatPointage = {}
-
-function getById<T extends HTMLElement>(id: string): T {
-  const el = document.getElementById(id)
-  if (!el) throw new Error(`Element introuvable: #${id}`)
-  return el as T
-}
-
-function getSessionDates(debut: string, fin: string): SessionDate[] {
+export function getWeekendDates(dateDebut: string, dateFin: string): SessionDate[] {
   const dates: SessionDate[] = []
-  const current = new Date(`${debut}T00:00:00`)
-  const end = new Date(`${fin}T00:00:00`)
+  const current = new Date(`${dateDebut}T00:00:00`)
+  const end = new Date(`${dateFin}T00:00:00`)
+
   while (current <= end) {
     const day = current.getDay()
     if (day === 6 || day === 0) {
@@ -58,14 +15,38 @@ function getSessionDates(debut: string, fin: string): SessionDate[] {
     }
     current.setDate(current.getDate() + 1)
   }
+
   return dates
+}
+
+const cycle: Statut[] = ['non_assigne', 'present', 'absent', 'remplacement']
+const etat: Record<string, Statut> = {}
+
+function getById<T extends HTMLElement>(id: string): T {
+  const el = document.getElementById(id)
+  if (!el) throw new Error(`Element introuvable: #${id}`)
+  return el as T
+}
+
+function renderMessage(title: string, message: string): void {
+  const loading = getById<HTMLElement>('loading')
+  const app = getById<HTMLElement>('app')
+  loading.style.display = 'none'
+  app.style.display = 'block'
+  app.innerHTML = `
+    <div class="card">
+      <div class="header">
+        <h1>${title}</h1>
+        <p>Pointage des cours</p>
+      </div>
+      <div class="deja-valide">${message}</div>
+    </div>`
 }
 
 function groupByWeek(dates: SessionDate[]): SessionDate[][] {
   const weeks: SessionDate[][] = []
   let currentWeek: SessionDate[] = []
   let currentMonday: string | null = null
-
   dates.forEach((d) => {
     const dt = new Date(`${d.date}T00:00:00`)
     const monday = new Date(dt)
@@ -78,13 +59,12 @@ function groupByWeek(dates: SessionDate[]): SessionDate[][] {
     }
     currentWeek.push(d)
   })
-
   if (currentWeek.length) weeks.push(currentWeek)
   return weeks
 }
 
 function getStatut(date: string, session: Session): Statut {
-  return etat[`${date}_${session}`] ?? 'non_assigne'
+  return etat[`${date}_${session}`] || 'non_assigne'
 }
 
 function setStatut(date: string, session: Session, statut: Statut): void {
@@ -92,12 +72,24 @@ function setStatut(date: string, session: Session, statut: Statut): void {
   updateSummary()
 }
 
+function cycleStatut(date: string, session: Session): void {
+  const cur = getStatut(date, session)
+  const idx = cycle.indexOf(cur)
+  const next = cycle[(idx + 1) % cycle.length]
+  setStatut(date, session, next)
+  const btn = document.querySelector<HTMLElement>(`[data-date="${date}"][data-session="${session}"]`)
+  if (btn) {
+    btn.dataset.statut = next
+    btn.textContent = labelSession(session, next)
+  }
+}
+
 function labelSession(session: Session, statut: Statut): string {
-  const base = session === 'matin' ? 'Matin' : 'Apres-midi'
-  if (statut === 'non_assigne') return base
-  if (statut === 'present') return `${base} ✓`
-  if (statut === 'absent') return `${base} ✗`
-  return `${base} ↔`
+  const s = session === 'matin' ? 'Matin' : 'Après-midi'
+  if (statut === 'non_assigne') return s
+  if (statut === 'present') return `${s} ✓`
+  if (statut === 'absent') return `${s} ✗`
+  return `${s} ↔`
 }
 
 function updateSummary(): void {
@@ -108,10 +100,7 @@ function updateSummary(): void {
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'short'
-  })
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }
 
 function formatWeekLabel(dates: SessionDate[]): string {
@@ -119,16 +108,19 @@ function formatWeekLabel(dates: SessionDate[]): string {
   return `Semaine du ${first.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`
 }
 
-function cycleStatut(date: string, session: Session): void {
-  const cur = getStatut(date, session)
-  const idx = cycleStatuts.indexOf(cur)
-  const next = cycleStatuts[(idx + 1) % cycleStatuts.length]
-  setStatut(date, session, next)
-  const btn = document.querySelector<HTMLElement>(`[data-date="${date}"][data-session="${session}"]`)
-  if (btn) {
-    btn.dataset.statut = next
-    btn.textContent = labelSession(session, next)
-  }
+function formatPeriodeLabel(dateDebut: string, dateFin: string): string {
+  const debut = new Date(`${dateDebut}T00:00:00`)
+  const fin = new Date(`${dateFin}T00:00:00`)
+  const debutTxt = debut.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')
+  const finTxt = fin.toLocaleDateString('fr-FR', { month: 'long' })
+  return `Vacances ${debutTxt}. - ${finTxt} ${fin.getFullYear()}`
+}
+
+function pointagesFromEtat(): Pointage[] {
+  return Object.entries(etat).map(([key, statut]) => {
+    const [date, session] = key.split('_')
+    return { date, session: session as Session, statut: statut as Statut }
+  })
 }
 
 async function sauvegarder(token: string): Promise<void> {
@@ -136,15 +128,10 @@ async function sauvegarder(token: string): Promise<void> {
   btn.disabled = true
   btn.textContent = 'Enregistrement...'
 
-  const pointages: Pointage[] = Object.entries(etat).map(([key, statut]) => {
-    const [date, session] = key.split('_')
-    return { date, session: session as Session, statut: statut as Statut }
-  })
-
   const res = await fetch('/api/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, pointages })
+    body: JSON.stringify({ token, pointages: pointagesFromEtat() })
   })
   const data = (await res.json()) as { ok?: boolean }
 
@@ -159,9 +146,10 @@ async function sauvegarder(token: string): Promise<void> {
   btn.textContent = 'Valider mon pointage'
 }
 
-function renderApp(prof: Prof, periode: { nom: string; date_debut: string; date_fin: string }): void {
-  const initiales = `${prof.prenom[0]}${prof.nom[0]}`.toUpperCase()
-  const dates = getSessionDates(periode.date_debut, periode.date_fin)
+function render(prof: { prenom: string; nom: string; niveau?: string | null; valid_form: boolean }, periode: { nom: string; date_debut: string; date_fin: string }): void {
+  const initiales = (prof.prenom[0] + prof.nom[0]).toUpperCase()
+  const periodeLabel = formatPeriodeLabel(periode.date_debut, periode.date_fin)
+  const dates = getWeekendDates(periode.date_debut, periode.date_fin)
   const weeks = groupByWeek(dates)
 
   let weeksHtml = ''
@@ -193,9 +181,9 @@ function renderApp(prof: Prof, periode: { nom: string; date_debut: string; date_
   if (prof.valid_form) {
     getById<HTMLElement>('app').innerHTML = `
       <div class="card">
-        <div class="header"><h1>Pointage valide</h1><p>Periode ${periode.nom}</p></div>
+        <div class="header"><h1>Pointage validé</h1><p>Période ${periode.nom}</p></div>
         <div class="deja-valide">
-          Tu as deja valide ton pointage pour cette periode.<br>
+          Tu as déjà validé ton pointage pour cette période.<br>
           Contacte l'administrateur si tu dois le modifier.
         </div>
       </div>`
@@ -205,42 +193,44 @@ function renderApp(prof: Prof, periode: { nom: string; date_debut: string; date_
   getById<HTMLElement>('app').innerHTML = `
     <div class="card">
       <div class="header">
-        <h1>Pointage des sessions</h1>
-        <p>Periode ${periode.nom}</p>
+        <h1>Pointage des cours</h1>
+        <p>${periode.date_debut} - ${periode.date_fin}</p>
       </div>
       <div class="prof-badge">
         <div class="avatar">${initiales}</div>
         <div>
           <div style="font-size:14px;font-weight:500">${prof.prenom} ${prof.nom}</div>
-          <div style="font-size:12px;color:#888">${prof.niveau ?? ''}</div>
+          <div style="font-size:12px;color:#888">niveau ${prof.niveau || ''}</div>
         </div>
       </div>
       <div class="legend">
-        <div class="leg-item"><div class="leg-dot" style="background:#1D9E75"></div> Present</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#1D9E75"></div> Présent</div>
         <div class="leg-item"><div class="leg-dot" style="background:#E24B4A"></div> Absent</div>
         <div class="leg-item"><div class="leg-dot" style="background:#EF9F27"></div> Remplacement</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#CFCFCB"></div> Non assigné</div>
       </div>
       ${weeksHtml}
       <div class="summary">
-        <div class="sum-card"><div class="sum-n" style="color:#0F6E56" id="cnt-p">0</div><div style="font-size:11px;color:#888;margin-top:2px">Presences</div></div>
+        <div class="sum-card"><div class="sum-n" style="color:#0F6E56" id="cnt-p">0</div><div style="font-size:11px;color:#888;margin-top:2px">Présences</div></div>
         <div class="sum-card"><div class="sum-n" style="color:#A32D2D" id="cnt-a">0</div><div style="font-size:11px;color:#888;margin-top:2px">Absences</div></div>
         <div class="sum-card"><div class="sum-n" style="color:#854F0B" id="cnt-r">0</div><div style="font-size:11px;color:#888;margin-top:2px">Remplacements</div></div>
       </div>
-      <div id="msg-erreur">Une erreur est survenue, reessaie.</div>
-      <div id="msg-succes">Pointage enregistre ! Un mail de confirmation t'a ete envoye.</div>
-      <button class="save-btn" id="btn-save">Valider mon pointage</button>
+      <div id="msg-erreur">Une erreur est survenue, réessaie.</div>
+      <div id="msg-succes">Pointage enregistré ! Un mail de confirmation t'a été envoyé.</div>
+      <div class="help-text">Appuie sur une session pour changer son statut</div>
+      <button class="save-btn" id="btn-save">Enregistrer ↗</button>
     </div>`
 
   updateSummary()
 }
 
-export async function initPointageApp(): Promise<void> {
+export async function initUI(): Promise<void> {
+  const token = new URLSearchParams(window.location.search).get('token')
   const loading = getById<HTMLElement>('loading')
   const app = getById<HTMLElement>('app')
 
-  const token = new URLSearchParams(window.location.search).get('token')
   if (!token) {
-    loading.textContent = 'Lien invalide.'
+    renderMessage('Lien invalide', 'Le token est absent. Vérifie le lien reçu.')
     return
   }
 
@@ -248,7 +238,7 @@ export async function initPointageApp(): Promise<void> {
   const data = (await res.json()) as GetDataResponse
 
   if ('error' in data) {
-    loading.textContent = 'Lien invalide ou expire.'
+    renderMessage('Erreur', data.error)
     return
   }
 
@@ -259,14 +249,14 @@ export async function initPointageApp(): Promise<void> {
   loading.style.display = 'none'
   app.style.display = 'block'
 
-  renderApp(data.prof, data.periode)
+  render(data.prof, data.periode)
 
   app.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement | null
-    if (!target) return
+    const target = event.target
+    if (!(target instanceof HTMLElement)) return
 
-    const sessBtn = target.closest('.js-sess') as HTMLElement | null
-    if (sessBtn) {
+    const sessBtn = target.closest('.js-sess')
+    if (sessBtn instanceof HTMLElement) {
       const date = sessBtn.dataset.date
       const session = sessBtn.dataset.session as Session | undefined
       if (date && session) cycleStatut(date, session)

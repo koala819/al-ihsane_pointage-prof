@@ -1,35 +1,38 @@
-type Session = 'matin' | 'apres_midi'
-type Statut = 'non_assigne' | 'present' | 'absent' | 'remplacement'
+export type Session = 'matin' | 'apres_midi'
+export type Statut = 'non_assigne' | 'present' | 'absent' | 'remplacement'
 
-type Pointage = {
+export type Pointage = {
   date: string
   session: Session
   statut: Statut
 }
 
-type Prof = {
+export type Prof = {
   prenom: string
   nom: string
   niveau?: string | null
   valid_form: boolean
 }
 
-type GetDataResponse =
+export type Periode = {
+  nom: string
+  date_debut: string
+  date_fin: string
+}
+
+export type GetDataResponse =
   | {
       error: string
     }
   | {
       prof: Prof
+      periode: Periode
       pointages: Pointage[]
     }
 
-const PERIODE = 'fev-paques-2026'
-const DATE_DEBUT = '2026-02-14'
-const DATE_FIN = '2026-04-05'
-
-type SessionDate = {
+export type SessionDate = {
   date: string
   jour: 'Samedi' | 'Dimanche'
 }
 
-type EtatPointage = Record<string, Statut>
+export type EtatPointage = Record<string, Statut>
