@@ -2,30 +2,49 @@ import { supabase } from '../../lib/supabase.js'
 import { Resend } from 'resend'
 
 const resend = new Resend(import.meta.env.RESEND_API_KEY)
-const PERIODE = 'fev-paques-2026'
 const MON_MAIL = 'ton@mail.com'
 
 export async function POST({ request }) {
   const { token, pointages } = await request.json()
 
+  if (!token || !Array.isArray(pointages)) {
+    return new Response(JSON.stringify({ error: 'Payload invalide' }), { status: 400 })
+  }
+
   const { data: prof, error } = await supabase
-    .from('profs')
+    .from('paie.profs')
     .select('id, nom, prenom, mail, valid_form')
     .eq('token', token)
-    .single()
+    .maybeSingle()
 
   if (error || !prof) {
     return new Response(JSON.stringify({ error: 'Prof introuvable' }), { status: 404 })
   }
 
+  const { data: periode, error: periodeError } = await supabase
+  .from('paie.periodes')
+  .select('id, nom')
+  .eq('actif', true)
+  .maybeSingle()
+
+if (periodeError || !periode) {
+  return new Response(JSON.stringify({ error: 'Période introuvable' }), { status: 404 })
+}
+
+
+
   if (prof.valid_form) {
     return new Response(JSON.stringify({ error: 'Formulaire déjà validé' }), { status: 403 })
+  }
+
+  if (pointages.length === 0) {
+    return new Response(JSON.stringify({ error: 'Aucun pointage' }), { status: 400 })
   }
 
   // Upsert de tous les pointages
   const rows = pointages.map(p => ({
     prof_id: prof.id,
-    periode: PERIODE,
+    periode_id: periode.id,
     date: p.date,
     session: p.session,
     statut: p.statut,
@@ -33,15 +52,15 @@ export async function POST({ request }) {
   }))
 
   const { error: upsertError } = await supabase
-    .from('pointages')
-    .upsert(rows, { onConflict: 'prof_id,periode,date,session' })
+    .from('paie.pointages')
+    .upsert(rows, { onConflict: 'prof_id,periode_id,date,session' })
 
   if (upsertError) {
     return new Response(JSON.stringify({ error: 'Erreur sauvegarde' }), { status: 500 })
   }
 
   // Marquer comme validé
-  await supabase.from('profs').update({ valid_form: true }).eq('id', prof.id)
+  await supabase.from('paie.profs').update({ valid_form: true }).eq('id', prof.id)
 
   // Résumé pour le mail
   const presents = pointages.filter(p => p.statut === 'present').length
@@ -54,7 +73,7 @@ export async function POST({ request }) {
     .join('\n')
 
   const corps = `
-${prof.prenom} ${prof.nom} a validé son pointage pour la période ${PERIODE}.
+${prof.prenom} ${prof.nom} a validé son pointage pour la période ${periode.nom}.
 
 Présences : ${presents}
 Absences : ${absents}
@@ -67,7 +86,7 @@ ${lignes}
   await resend.emails.send({
     from: 'ecole@tondomaine.com',
     to: [prof.mail, MON_MAIL],
-    subject: `Pointage ${prof.prenom} ${prof.nom} — ${PERIODE}`,
+    subject: `Pointage ${prof.prenom} ${prof.nom} — ${periode.nom}`,
     text: corps
   })
 
