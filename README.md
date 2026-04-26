@@ -1,43 +1,54 @@
-# Astro Starter Kit: Minimal
+# Pointage Profs - Guide operationnel
 
-```sh
-pnpm create astro@latest -- --template minimal
+Application Astro pour:
+- le pointage individuel des profs via lien personnel (`?token=...`)
+- l'envoi de campagne email des liens de pointage
+
+## Variables d'environnement (noms uniquement)
+
+```
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+MAIL_TO
+SMTP_HOST
+SMTP_PORT
+SMTP_USER
+SMTP_PASSWORD
+MAIL_CAMPAIGN_TOKEN
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+## URLs utiles
 
-## 🚀 Project Structure
+- **Fiche de pointage prof**: `/?token=TOKEN_DU_PROF`
+- **Page de campagne d'envoi**: `/envoi-mails?token=MAIL_CAMPAIGN_TOKEN`
 
-Inside of your Astro project, you'll see the following folders and files:
+## Campagne suivante (ex: Ete 2026)
 
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
-```
+Pour relancer une nouvelle campagne (apres Printemps 2026), il faut preparer la base:
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+- **Table `paie.periodes`**
+  - creer/mettre a jour la ligne de la nouvelle periode (nom + dates)
+  - mettre **une seule** periode active: `actif = true` pour la nouvelle, `actif = false` pour les autres
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+- **Table `paie.profs`**
+  - remettre `valid_form = false` pour autoriser un nouveau remplissage de fiche
+  - remettre `mail_envoye = false` pour autoriser un nouvel envoi de mail de campagne
+  - verifier/regenerer `token` si on veux des liens differents de la campagne precedente
 
-Any static assets, like images, can be placed in the `public/` directory.
+- **Table `paie.pointages`**
+  - pas obligatoire de supprimer l'historique
+  - les nouveaux pointages seront lies a la nouvelle `periode` (via son `id`)
 
-## 🧞 Commands
+## Cas de correction d'une fiche deja validee
 
-All commands are run from the root of the project, from a terminal:
+Si un prof doit modifier sa fiche apres validation:
+- mettre `valid_form = false` pour ce prof dans `paie.profs`
+- il pourra reouvrir sa fiche via son URL `/?token=...` puis revalider
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `pnpm install`             | Installs dependencies                            |
-| `pnpm dev`             | Starts local dev server at `localhost:4321`      |
-| `pnpm build`           | Build your production site to `./dist/`          |
-| `pnpm preview`         | Preview your build locally, before deploying     |
-| `pnpm astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `pnpm astro -- --help` | Get help using the Astro CLI                     |
+## Important pour les textes d'email (saison)
 
-## 👀 Want to learn more?
+Les libelles "printemps 2026" sont actuellement en dur dans le code.
+Avant la campagne Ete 2026, mettre a jour ces textes pour la nouvelle saison:
 
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+- `src/pages/api/mail-campaign.ts`
+- `src/pages/envoi-mails.astro`
