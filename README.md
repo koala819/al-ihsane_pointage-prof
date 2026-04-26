@@ -3,6 +3,7 @@
 Application Astro pour:
 - le pointage individuel des profs via lien personnel (`?token=...`)
 - l'envoi de campagne email des liens de pointage
+- le recapitulatif global par prof
 
 ## Variables d'environnement (noms uniquement)
 
@@ -15,12 +16,14 @@ SMTP_PORT
 SMTP_USER
 SMTP_PASSWORD
 MAIL_CAMPAIGN_TOKEN
+RECAP_TOKEN
 ```
 
 ## URLs utiles
 
 - **Fiche de pointage prof**: `/?token=TOKEN_DU_PROF`
 - **Page de campagne d'envoi**: `/envoi-mails?token=MAIL_CAMPAIGN_TOKEN`
+- **Page recapitulatif profs**: `/recap?token=RECAP_TOKEN`
 
 ## Campagne suivante (ex: Ete 2026)
 
