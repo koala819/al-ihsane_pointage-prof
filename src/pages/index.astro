@@ -228,6 +228,12 @@ if (!token) {
         )
       }
     </div>
-    {!errorMessage && !pageData?.prof.valid_form && <script type="module" src="/src/lib/pointage-controller.ts"></script>}
+    {
+      !errorMessage && !pageData?.prof.valid_form && (
+        <script>
+          import '../lib/pointage-controller.ts'
+        </script>
+      )
+    }
   </body>
 </html>
