@@ -1,5 +1,6 @@
 ---
 import { supabaseServer } from '../lib/supabase-server'
+import { TARIF_COURS_EUR } from '../lib/paie-tarif'
 
 export const prerender = false
 
@@ -8,14 +9,18 @@ const expectedToken = (import.meta.env.RECAP_TOKEN ?? '').trim()
 const isAllowed = Boolean(expectedToken) && accessToken === expectedToken
 
 type ProfSummary = {
+  /** uuid ou id numerique selon la base */
+  profId: string
   nom: string
   nomUpper: string
   prenom: string
   totalCours: number
   montant: number
+  virementFait: boolean
 }
 
 let periodeLabel = ''
+let activePeriodeId: string | null = null
 let rowsAvecSaisie: ProfSummary[] = []
 let rowsSansSaisie: ProfSummary[] = []
 let errorMessage = ''
@@ -32,6 +37,7 @@ if (isAllowed) {
     errorMessage = 'Periode active introuvable.'
   } else {
     periodeLabel = periode.nom
+    activePeriodeId = periode.id
 
     const { data: profs, error: profsError } = await supabaseServer
       .schema('paie')
@@ -53,21 +59,48 @@ if (isAllowed) {
       if (pointagesError || !pointages) {
         errorMessage = 'Impossible de recuperer les pointages.'
       } else {
-        const totalsByProf = new Map<number, number>()
+        const totalsByProf = new Map<string, number>()
         for (const p of pointages) {
-          const current = totalsByProf.get(p.prof_id) ?? 0
-          totalsByProf.set(p.prof_id, current + 1)
+          const k = String(p.prof_id)
+          totalsByProf.set(k, (totalsByProf.get(k) ?? 0) + 1)
+        }
+
+        const virementByProf = new Map<string, boolean>()
+        const { data: virementsRows } = await supabaseServer
+          .schema('paie')
+          .from('recap_virements')
+          .select('prof_id, fait')
+          .eq('periode_id', periode.id)
+        for (const v of virementsRows ?? []) {
+          virementByProf.set(String(v.prof_id), v.fait === true)
+        }
+
+        const montantByProf = new Map<string, number>()
+        const { data: montantsRows, error: montantsError } = await supabaseServer
+          .schema('paie')
+          .from('prof_periode_montants')
+          .select('prof_id, montant_eur')
+          .eq('periode_id', periode.id)
+        if (!montantsError) {
+          for (const m of montantsRows ?? []) {
+            if (m.montant_eur != null) montantByProf.set(String(m.prof_id), Number(m.montant_eur))
+          }
         }
 
         const sorted = profs
           .map((prof) => {
-            const totalCours = totalsByProf.get(prof.id) ?? 0
+            const pk = String(prof.id)
+            const totalCours = totalsByProf.get(pk) ?? 0
+            const calc = totalCours * TARIF_COURS_EUR
+            const stored = montantByProf.get(pk)
             return {
+              profId: pk,
               nom: prof.nom,
               nomUpper: prof.nom.toLocaleUpperCase('fr-FR'),
               prenom: prof.prenom,
               totalCours,
-              montant: totalCours * 30
+              montant: stored ?? calc,
+              virementFait: virementByProf.get(pk) ?? false
             }
           })
           .sort((a, b) => {
@@ -75,6 +108,22 @@ if (isAllowed) {
             if (byNom !== 0) return byNom
             return a.prenom.localeCompare(b.prenom, 'fr', { sensitivity: 'base' })
           })
+
+        const backfillMontants = sorted
+          .filter((r) => r.totalCours > 0 && !montantByProf.has(String(r.profId)))
+          .map((r) => ({
+            periode_id: periode.id,
+            prof_id: r.profId,
+            montant_eur: r.totalCours * TARIF_COURS_EUR,
+            updated_at: new Date().toISOString()
+          }))
+        if (backfillMontants.length > 0) {
+          await supabaseServer
+            .schema('paie')
+            .from('prof_periode_montants')
+            .upsert(backfillMontants, { onConflict: 'periode_id,prof_id' })
+        }
+
         rowsAvecSaisie = sorted.filter((r) => r.totalCours > 0)
         rowsSansSaisie = sorted.filter((r) => r.totalCours === 0)
       }
@@ -211,6 +260,109 @@ if (isAllowed) {
       .row--sans-saisie .amount {
         color: #78716c;
       }
+      .pay-hint {
+        font-size: 0.76rem;
+        color: #78716c;
+        padding: 0 0.15rem 0.35rem;
+        line-height: 1.35;
+      }
+      #recap-api-err {
+        display: none;
+        margin: 0 0.6rem 0.5rem;
+        padding: 0.5rem 0.65rem;
+        font-size: 0.78rem;
+        color: #7f1d1d;
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+      }
+      .row-pay {
+        width: 100%;
+        margin: 0;
+        font: inherit;
+        text-align: left;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto;
+        align-items: center;
+        column-gap: 0.65rem;
+        row-gap: 0.15rem;
+        padding: 0.7rem 0.75rem;
+        min-height: 3.25rem;
+        border-radius: 8px;
+        border: 1px solid #c8c4bc;
+        background: #e5e3df;
+        color: #3f3f46;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      .row-pay:active {
+        transform: scale(0.992);
+      }
+      .row-pay:focus-visible {
+        outline: 2px solid #1d9e75;
+        outline-offset: 2px;
+      }
+      .row-pay--pending {
+        background: #e5e3df;
+        border-color: #c8c4bc;
+        box-shadow: inset 0 1px 0 #fafaf9;
+      }
+      .row-pay--pending .row-pay__amount {
+        color: #57534e;
+      }
+      .row-pay--fait {
+        background: #d1fae5;
+        border-color: #34d399;
+        box-shadow: inset 0 1px 0 #ecfdf5;
+      }
+      .row-pay--fait .name,
+      .row-pay--fait .row-pay__cours {
+        color: #14532d;
+      }
+      .row-pay--fait .row-pay__amount {
+        color: #047857;
+      }
+      .row-pay__left {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        min-width: 0;
+      }
+      .row-pay__cours {
+        font-size: 0.8rem;
+        color: #78716c;
+        margin-top: 0.1rem;
+      }
+      .row-pay__amount {
+        grid-column: 2;
+        grid-row: 1;
+        font-weight: 800;
+        font-size: 0.9rem;
+        white-space: nowrap;
+      }
+      .row-pay__ico {
+        grid-column: 2;
+        grid-row: 2;
+        justify-self: end;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 1.85rem;
+        height: 1.85rem;
+      }
+      .row-pay__ico-virement {
+        width: 1.5rem;
+        height: 1.5rem;
+        flex-shrink: 0;
+        color: #15803d;
+      }
+      .row-pay--fait .row-pay__ico {
+        display: flex;
+        color: #15803d;
+      }
       @media (min-width: 640px) {
         .wrap { padding: 1.25rem; }
         .row {
@@ -219,6 +371,23 @@ if (isAllowed) {
           gap: 1rem;
         }
         .meta { display: contents; }
+        .row-pay {
+          grid-template-columns: 1fr auto auto;
+          grid-template-rows: auto;
+          align-items: center;
+        }
+        .row-pay__left {
+          grid-column: 1;
+          grid-row: 1;
+        }
+        .row-pay__amount {
+          grid-column: 2;
+          grid-row: 1;
+        }
+        .row-pay__ico {
+          grid-column: 3;
+          grid-row: 1;
+        }
       }
     </style>
   </head>
@@ -244,25 +413,60 @@ if (isAllowed) {
               ) : rowsAvecSaisie.length === 0 && rowsSansSaisie.length === 0 ? (
                 <div class="empty">Aucune donnee a afficher.</div>
               ) : (
-                <div class="content">
+                <div class="content" data-periode-id={activePeriodeId ?? ''}>
                   <div class="section">
                     <div class="section-title">
                       <strong>{rowsAvecSaisie.length}</strong> Enseignants avec saisie effectuée
                     </div>
+                    <p class="pay-hint">
+                      Touchez une ligne pour marquer le virement comme effectue (ou annuler).
+                    </p>
+                    <div id="recap-api-err" role="alert" />
                     {
                       rowsAvecSaisie.length === 0 ? (
                         <div class="section-empty">Aucun prof avec pointage pour cette periode.</div>
                       ) : (
-                        <div class="list">
+                        <div class="list js-recap-pay-list">
                           {
                             rowsAvecSaisie.map((row) => (
-                              <div class="row">
-                                <div class="name">{row.nomUpper} {row.prenom}</div>
-                                <div class="meta">
-                                  <span>{row.totalCours} cours</span>
-                                  <span class="amount">{row.montant} EUR</span>
+                              <button
+                                type="button"
+                                class={`row-pay ${row.virementFait ? 'row-pay--fait' : 'row-pay--pending'}`}
+                                data-prof-id={row.profId}
+                                data-virement={row.virementFait ? 'fait' : 'pending'}
+                                aria-pressed={row.virementFait ? 'true' : 'false'}
+                                aria-label={
+                                  row.virementFait
+                                    ? `Virement effectue pour ${row.prenom} ${row.nom}, toucher pour annuler`
+                                    : `Marquer le virement pour ${row.prenom} ${row.nom}`
+                                }
+                              >
+                                <div class="row-pay__left">
+                                  <div class="name">{row.nomUpper} {row.prenom}</div>
+                                  <div class="row-pay__cours">{row.totalCours} cours</div>
                                 </div>
-                              </div>
+                                <div class="row-pay__amount">{row.montant} EUR</div>
+                                <span class="row-pay__ico" aria-hidden="true">
+                                  <!-- Lucide hand-coins (ISC) https://lucide.dev/icons/hand-coins -->
+                                  <svg
+                                    class="row-pay__ico-virement lucide lucide-hand-coins"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17" />
+                                    <path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" />
+                                    <path d="m2 16 6 6" />
+                                    <circle cx="16" cy="9" r="2.9" />
+                                    <circle cx="6" cy="5" r="3" />
+                                  </svg>
+                                </span>
+                              </button>
                             ))
                           }
                         </div>
@@ -301,5 +505,88 @@ if (isAllowed) {
         )
       }
     </div>
+    {
+      isAllowed &&
+        activePeriodeId != null &&
+        activePeriodeId !== '' &&
+        !errorMessage &&
+        rowsAvecSaisie.length > 0 && (
+        <script is:inline>
+          // @ts-nocheck
+          const token = new URLSearchParams(location.search).get('token') ?? ''
+          const periodeIdFromDom =
+            document.querySelector('.content')?.getAttribute('data-periode-id')?.trim() ?? ''
+          const errEl = document.getElementById('recap-api-err')
+
+          const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          const idProfOk = (s) => uuidRe.test(s) || /^\d+$/.test(s)
+
+          function showPayErr(msg) {
+            if (!errEl) return
+            errEl.textContent = msg
+            errEl.style.display = msg ? 'block' : 'none'
+          }
+
+          function setVirementState(btn, fait) {
+            btn.dataset.virement = fait ? 'fait' : 'pending'
+            btn.classList.remove('row-pay--fait', 'row-pay--pending')
+            btn.classList.add(fait ? 'row-pay--fait' : 'row-pay--pending')
+            btn.setAttribute('aria-pressed', fait ? 'true' : 'false')
+            const nom = btn.querySelector('.name')?.textContent?.trim() ?? ''
+            btn.setAttribute(
+              'aria-label',
+              fait
+                ? `Virement effectue pour ${nom}, toucher pour annuler`
+                : `Marquer le virement pour ${nom}`
+            )
+          }
+
+          if (!periodeIdFromDom || !uuidRe.test(periodeIdFromDom)) {
+            showPayErr('ID periode invalide (recharge la page).')
+          } else {
+            document.querySelectorAll('.row-pay').forEach((row) => {
+              row.addEventListener('click', async () => {
+                const prev = row.dataset.virement === 'fait'
+                const fait = !prev
+                const profId = row.getAttribute('data-prof-id')?.trim() ?? ''
+                if (!profId || !idProfOk(profId)) return
+
+                showPayErr('')
+                setVirementState(row, fait)
+
+                try {
+                  const res = await fetch('/api/recap-virement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      token,
+                      periodeId: periodeIdFromDom,
+                      profId,
+                      fait
+                    })
+                  })
+                  let data = {}
+                  try {
+                    data = await res.json()
+                  } catch {
+                    /* ignore */
+                  }
+                  if (!res.ok) {
+                    setVirementState(row, prev)
+                    const msg =
+                      [data.error, data.details, data.hint].filter(Boolean).join(' — ') ||
+                      `Erreur ${res.status}`
+                    showPayErr(msg)
+                  }
+                } catch (e) {
+                  setVirementState(row, prev)
+                  showPayErr(e instanceof Error ? e.message : 'Reseau indisponible')
+                }
+              })
+            })
+          }
+        </script>
+      )
+    }
   </body>
 </html>

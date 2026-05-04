@@ -59,6 +59,19 @@ export async function GET({ url }: APIContext): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Erreur lors de la récupération des pointages' }), { status: 500 })
   }
 
+  const { data: remuneration, error: remunerationError } = await supabaseServer
+    .schema('paie')
+    .from('prof_periode_montants')
+    .select('montant_eur')
+    .eq('periode_id', periode.id)
+    .eq('prof_id', prof.id)
+    .maybeSingle()
+
+  const montantPeriode =
+    !remunerationError && remuneration?.montant_eur != null
+      ? Number(remuneration.montant_eur)
+      : null
+
   return new Response(
     JSON.stringify({
       prof,
@@ -69,7 +82,8 @@ export async function GET({ url }: APIContext): Promise<Response> {
       })),
       hasSubmitted: prof.valid_form,
       hasPointages: pointages.length > 0,
-      fullName: `${prof.prenom} ${prof.nom}`
+      fullName: `${prof.prenom} ${prof.nom}`,
+      montant_periode: montantPeriode
     }),
     {
       status: 200,
