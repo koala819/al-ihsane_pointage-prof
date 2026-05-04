@@ -1,5 +1,6 @@
 import type { APIContext } from 'astro'
 import { supabaseServer } from '../../lib/supabase-server'
+import { TARIF_COURS_EUR } from '../../lib/paie-tarif'
 
 export const prerender = false
 
@@ -25,6 +26,10 @@ export function loadPeriodeActive() {
 
 function normalizeSession(session: string): 'matin' | 'apres_midi' {
   return session === 'apm' ? 'apres_midi' : 'matin'
+}
+
+function isPayableStatut(statut: string): boolean {
+  return statut === 'present' || statut === 'remplacement'
 }
 
 export async function GET({ url }: APIContext): Promise<Response> {
@@ -59,18 +64,10 @@ export async function GET({ url }: APIContext): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Erreur lors de la récupération des pointages' }), { status: 500 })
   }
 
-  const { data: remuneration, error: remunerationError } = await supabaseServer
-    .schema('paie')
-    .from('prof_periode_montants')
-    .select('montant_eur')
-    .eq('periode_id', periode.id)
-    .eq('prof_id', prof.id)
-    .maybeSingle()
-
   const montantPeriode =
-    !remunerationError && remuneration?.montant_eur != null
-      ? Number(remuneration.montant_eur)
-      : null
+    pointages
+      .filter((p) => isPayableStatut(p.statut))
+      .length * TARIF_COURS_EUR
 
   return new Response(
     JSON.stringify({

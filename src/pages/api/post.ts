@@ -1,7 +1,6 @@
 import type { APIContext } from 'astro'
 import { supabaseServer } from '../../lib/supabase-server'
 import { loadPeriodeActive, loadProfByToken } from './get'
-import { TARIF_COURS_EUR } from '../../lib/paie-tarif'
 import nodemailer from 'nodemailer'
 import type { SavePayload, Session, Statut } from '../../lib/types'
 
@@ -139,27 +138,6 @@ export async function POST({ request }: APIContext): Promise<Response> {
   const coursPayants = pointages.filter(
     (p) => p.statut === 'present' || p.statut === 'remplacement'
   ).length
-  const montantEur = coursPayants * TARIF_COURS_EUR
-
-  const { error: montantError } = await supabaseServer
-    .schema('paie')
-    .from('prof_periode_montants')
-    .upsert(
-      {
-        periode_id: periode.id,
-        prof_id: prof.id,
-        montant_eur: montantEur,
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: 'periode_id,prof_id' }
-    )
-
-  if (montantError) {
-    return new Response(
-      JSON.stringify({ error: `Erreur enregistrement montant: ${montantError.message}` }),
-      { status: 500 }
-    )
-  }
 
   /* Mettre à jour les données du prof : valid_form */
   const { error: updateError } = await supabaseServer

@@ -75,31 +75,17 @@ if (isAllowed) {
           virementByProf.set(String(v.prof_id), v.fait === true)
         }
 
-        const montantByProf = new Map<string, number>()
-        const { data: montantsRows, error: montantsError } = await supabaseServer
-          .schema('paie')
-          .from('prof_periode_montants')
-          .select('prof_id, montant_eur')
-          .eq('periode_id', periode.id)
-        if (!montantsError) {
-          for (const m of montantsRows ?? []) {
-            if (m.montant_eur != null) montantByProf.set(String(m.prof_id), Number(m.montant_eur))
-          }
-        }
-
         const sorted = profs
           .map((prof) => {
             const pk = String(prof.id)
             const totalCours = totalsByProf.get(pk) ?? 0
-            const calc = totalCours * TARIF_COURS_EUR
-            const stored = montantByProf.get(pk)
             return {
               profId: pk,
               nom: prof.nom,
               nomUpper: prof.nom.toLocaleUpperCase('fr-FR'),
               prenom: prof.prenom,
               totalCours,
-              montant: stored ?? calc,
+              montant: totalCours * TARIF_COURS_EUR,
               virementFait: virementByProf.get(pk) ?? false
             }
           })
@@ -108,21 +94,6 @@ if (isAllowed) {
             if (byNom !== 0) return byNom
             return a.prenom.localeCompare(b.prenom, 'fr', { sensitivity: 'base' })
           })
-
-        const backfillMontants = sorted
-          .filter((r) => r.totalCours > 0 && !montantByProf.has(String(r.profId)))
-          .map((r) => ({
-            periode_id: periode.id,
-            prof_id: r.profId,
-            montant_eur: r.totalCours * TARIF_COURS_EUR,
-            updated_at: new Date().toISOString()
-          }))
-        if (backfillMontants.length > 0) {
-          await supabaseServer
-            .schema('paie')
-            .from('prof_periode_montants')
-            .upsert(backfillMontants, { onConflict: 'periode_id,prof_id' })
-        }
 
         rowsAvecSaisie = sorted.filter((r) => r.totalCours > 0)
         rowsSansSaisie = sorted.filter((r) => r.totalCours === 0)
