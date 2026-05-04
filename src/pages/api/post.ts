@@ -124,7 +124,15 @@ export async function POST({ request }: APIContext): Promise<Response> {
     .upsert(rows, { onConflict: 'prof_id,periode_id,date,session' })
 
   if (upsertError) {
-    return new Response(JSON.stringify({ error: 'Erreur sauvegarde' }), { status: 500 })
+    return new Response(
+      JSON.stringify({
+        error: 'Erreur sauvegarde',
+        details: upsertError.message,
+        hint: upsertError.hint ?? undefined,
+        code: upsertError.code ?? undefined
+      }),
+      { status: 500 }
+    )
   }
 
   /* Mettre à jour les données du prof : valid_form */

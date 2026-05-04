@@ -88,7 +88,13 @@ async function sauvegarder(token: string): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token, pointages: pointagesFromEtat() })
   })
-  const data = (await res.json()) as { ok?: boolean }
+
+  let data: { ok?: boolean; error?: string; details?: string; hint?: string }
+  try {
+    data = (await res.json()) as typeof data
+  } catch {
+    data = { error: `Reponse serveur invalide (HTTP ${res.status})` }
+  }
 
   if (data.ok) {
     el<HTMLElement>('msgSucces').style.display = 'block'
@@ -96,6 +102,9 @@ async function sauvegarder(token: string): Promise<void> {
     return
   }
 
+  const parts = [data.error, data.details, data.hint].filter(Boolean)
+  el<HTMLElement>('msgErreur').textContent =
+    parts.length > 0 ? parts.join(' — ') : 'Une erreur est survenue, réessaie.'
   el<HTMLElement>('msgErreur').style.display = 'block'
   btn.disabled = false
   btn.textContent = 'Enregistrer ↗'
