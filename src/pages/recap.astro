@@ -16,7 +16,8 @@ type ProfSummary = {
 }
 
 let periodeLabel = ''
-let rows: ProfSummary[] = []
+let rowsAvecSaisie: ProfSummary[] = []
+let rowsSansSaisie: ProfSummary[] = []
 let errorMessage = ''
 
 if (isAllowed) {
@@ -58,21 +59,24 @@ if (isAllowed) {
           totalsByProf.set(p.prof_id, current + 1)
         }
 
-        rows = profs.map((prof) => {
-          const totalCours = totalsByProf.get(prof.id) ?? 0
-          return {
-            nom: prof.nom,
-            nomUpper: prof.nom.toLocaleUpperCase('fr-FR'),
-            prenom: prof.prenom,
-            totalCours,
-            montant: totalCours * 30
-          }
-        })
-        rows.sort((a, b) => {
-          const byNom = a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' })
-          if (byNom !== 0) return byNom
-          return a.prenom.localeCompare(b.prenom, 'fr', { sensitivity: 'base' })
-        })
+        const sorted = profs
+          .map((prof) => {
+            const totalCours = totalsByProf.get(prof.id) ?? 0
+            return {
+              nom: prof.nom,
+              nomUpper: prof.nom.toLocaleUpperCase('fr-FR'),
+              prenom: prof.prenom,
+              totalCours,
+              montant: totalCours * 30
+            }
+          })
+          .sort((a, b) => {
+            const byNom = a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' })
+            if (byNom !== 0) return byNom
+            return a.prenom.localeCompare(b.prenom, 'fr', { sensitivity: 'base' })
+          })
+        rowsAvecSaisie = sorted.filter((r) => r.totalCours > 0)
+        rowsSansSaisie = sorted.filter((r) => r.totalCours === 0)
       }
     }
   }
@@ -157,6 +161,56 @@ if (isAllowed) {
         padding: 1rem;
         color: #6b7280;
       }
+      .content {
+        padding: 0.6rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.15rem;
+      }
+      .section {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+      }
+      .section-title {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #57534e;
+        font-weight: 700;
+        padding: 0 0.15rem;
+      }
+      .section-title strong {
+        font-weight: 800;
+        color: #1c1917;
+      }
+      .section-hint {
+        font-size: 0.78rem;
+        color: #78716c;
+        padding: 0 0.15rem 0.15rem;
+        line-height: 1.35;
+      }
+      .section-empty {
+        padding: 0.55rem 0.75rem;
+        color: #78716c;
+        font-size: 0.85rem;
+        font-style: italic;
+        background: #f5f4f0;
+        border: 1px dashed #d6d3cd;
+        border-radius: 8px;
+      }
+      .divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, #c4c0b8 18%, #c4c0b8 82%, transparent);
+        margin: 0.15rem 0;
+      }
+      .row--sans-saisie {
+        background: #f8f7f4;
+        border-color: #e0ddd6;
+      }
+      .row--sans-saisie .amount {
+        color: #78716c;
+      }
       @media (min-width: 640px) {
         .wrap { padding: 1.25rem; }
         .row {
@@ -187,21 +241,59 @@ if (isAllowed) {
             {
               errorMessage ? (
                 <div class="error">{errorMessage}</div>
-              ) : rows.length === 0 ? (
+              ) : rowsAvecSaisie.length === 0 && rowsSansSaisie.length === 0 ? (
                 <div class="empty">Aucune donnee a afficher.</div>
               ) : (
-                <div class="list">
-                  {
-                    rows.map((row) => (
-                      <div class="row">
-                        <div class="name">{row.nomUpper} {row.prenom}</div>
-                        <div class="meta">
-                          <span>{row.totalCours} cours</span>
-                          <span class="amount">{row.montant} EUR</span>
+                <div class="content">
+                  <div class="section">
+                    <div class="section-title">
+                      <strong>{rowsAvecSaisie.length}</strong> Enseignants avec saisie effectuée
+                    </div>
+                    {
+                      rowsAvecSaisie.length === 0 ? (
+                        <div class="section-empty">Aucun prof avec pointage pour cette periode.</div>
+                      ) : (
+                        <div class="list">
+                          {
+                            rowsAvecSaisie.map((row) => (
+                              <div class="row">
+                                <div class="name">{row.nomUpper} {row.prenom}</div>
+                                <div class="meta">
+                                  <span>{row.totalCours} cours</span>
+                                  <span class="amount">{row.montant} EUR</span>
+                                </div>
+                              </div>
+                            ))
+                          }
                         </div>
-                      </div>
-                    ))
-                  }
+                      )
+                    }
+                  </div>
+                  <div class="divider" aria-hidden="true" />
+                  <div class="section">
+                    <div class="section-title">
+                      <strong>{rowsSansSaisie.length}</strong> Enseignants sans saisie
+                    </div>
+                    {
+                      rowsSansSaisie.length === 0 ? (
+                        <div class="section-empty">Tous les profs ont au moins une saisie.</div>
+                      ) : (
+                        <div class="list">
+                          {
+                            rowsSansSaisie.map((row) => (
+                              <div class="row row--sans-saisie">
+                                <div class="name">{row.nomUpper} {row.prenom}</div>
+                                <div class="meta">
+                                  <span>0 cours</span>
+                                  <span class="amount">0 EUR</span>
+                                </div>
+                              </div>
+                            ))
+                          }
+                        </div>
+                      )
+                    }
+                  </div>
                 </div>
               )
             }
