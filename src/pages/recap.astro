@@ -47,7 +47,7 @@ if (isAllowed) {
         .schema('paie')
         .from('pointages')
         .select('prof_id, statut')
-        .eq('periode', periode.id)
+        .eq('periode_id', periode.id)
         .in('statut', ['present', 'remplacement'])
 
       if (pointagesError || !pointages) {

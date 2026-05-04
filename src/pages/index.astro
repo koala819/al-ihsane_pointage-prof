@@ -103,7 +103,7 @@ if (!token) {
         .from('pointages')
         .select('date, session, statut')
         .eq('prof_id', prof.id)
-        .eq('periode', periode.id)
+        .eq('periode_id', periode.id)
         .order('date', { ascending: true })
 
       if (pointagesError) {

@@ -3,6 +3,26 @@ import { supabaseServer } from '../../lib/supabase-server'
 
 export const prerender = false
 
+/* Retourne les données du prof par son token. */
+export function loadProfByToken(token: string) {
+  return supabaseServer
+    .schema('paie')
+    .from('profs')
+    .select('id, nom, prenom, niveau, mail, valid_form')
+    .eq('token', token.trim())
+    .maybeSingle()
+}
+
+/* Retourne les données de la période active. */
+export function loadPeriodeActive() {
+  return supabaseServer
+    .schema('paie')
+    .from('periodes')
+    .select('id, nom, date_debut, date_fin')
+    .eq('actif', true)
+    .maybeSingle()
+}
+
 function normalizeSession(session: string): 'matin' | 'apres_midi' {
   return session === 'apm' ? 'apres_midi' : 'matin'
 }
@@ -14,34 +34,25 @@ export async function GET({ url }: APIContext): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Token invalide' }), { status: 400 })
   }
 
-  const { data: prof, error } = await supabaseServer
-    .schema('paie')
-    .from('profs')
-    .select('id, nom, prenom, niveau, salaire, mail, valid_form')
-    .eq('token', token)
-    .maybeSingle()
+  const { data: prof, error } = await loadProfByToken(token)
 
   if (error || !prof) {
     return new Response(JSON.stringify({ error: 'Prof introuvable' }), { status: 404 })
   }
 
-  const { data: periode, error: periodeError } = await supabaseServer
-    .schema('paie')
-    .from('periodes')
-    .select('id, nom, date_debut, date_fin')
-    .eq('actif', true)
-    .maybeSingle()
+  const { data: periode, error: periodeError } = await loadPeriodeActive()
 
   if (periodeError || !periode) {
     return new Response(JSON.stringify({ error: 'Période introuvable' }), { status: 404 })
   }
 
+  /* Obtenir les données des pointages : date, session, statut */
   const { data: pointages, error: pointagesError } = await supabaseServer
     .schema('paie')
     .from('pointages')
     .select('date, session, statut')
     .eq('prof_id', prof.id)
-    .eq('periode', periode.id)
+    .eq('periode_id', periode.id)
     .order('date', { ascending: true })
 
   if (pointagesError) {

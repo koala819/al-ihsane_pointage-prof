@@ -1,5 +1,6 @@
 import type { APIContext } from 'astro'
 import { supabaseServer } from '../../lib/supabase-server'
+import { loadPeriodeActive, loadProfByToken } from './get'
 import nodemailer from 'nodemailer'
 import type { SavePayload, Session, Statut } from '../../lib/types'
 
@@ -19,10 +20,6 @@ function toDbSession(session: Session): 'matin' | 'apm' {
 
 function isValidDate(dateStr: string): boolean {
   return !Number.isNaN(new Date(dateStr).getTime())
-}
-
-function toDisplaySession(session: Session): string {
-  return session === 'matin' ? 'Matin' : 'Apres-midi'
 }
 
 function toDisplayStatut(statut: Statut): string {
@@ -95,23 +92,13 @@ export async function POST({ request }: APIContext): Promise<Response> {
     }
   }
 
-  const { data: prof, error } = await supabaseServer
-    .schema('paie')
-    .from('profs')
-    .select('id, nom, prenom, mail, valid_form')
-    .eq('token', token)
-    .maybeSingle()
+  const { data: prof, error } = await loadProfByToken(token)
 
   if (error || !prof) {
     return new Response(JSON.stringify({ error: 'Prof introuvable' }), { status: 404 })
   }
 
-  const { data: periode, error: periodeError } = await supabaseServer
-    .schema('paie')
-    .from('periodes')
-    .select('id, nom')
-    .eq('actif', true)
-    .maybeSingle()
+  const { data: periode, error: periodeError } = await loadPeriodeActive()
 
   if (periodeError || !periode) {
     return new Response(JSON.stringify({ error: 'Periode introuvable' }), { status: 404 })
@@ -123,22 +110,24 @@ export async function POST({ request }: APIContext): Promise<Response> {
 
   const rows = pointages.map((p) => ({
     prof_id: prof.id,
-    periode: periode.id,
+    periode_id: periode.id,
     date: p.date,
     session: toDbSession(p.session),
     statut: p.statut,
     updated_at: new Date().toISOString()
   }))
 
+  /* Sauvegarder les pointages : cle unique prof_id, periode_id, date, session */
   const { error: upsertError } = await supabaseServer
     .schema('paie')
     .from('pointages')
-    .upsert(rows, { onConflict: 'prof_id,periode,date,session' })
+    .upsert(rows, { onConflict: 'prof_id,periode_id,date,session' })
 
   if (upsertError) {
     return new Response(JSON.stringify({ error: 'Erreur sauvegarde' }), { status: 500 })
   }
 
+  /* Mettre à jour les données du prof : valid_form */
   const { error: updateError } = await supabaseServer
     .schema('paie')
     .from('profs')
@@ -192,11 +181,6 @@ export async function POST({ request }: APIContext): Promise<Response> {
     arr.push(line)
     weekMap.set(key, arr)
   }
-
-  const weekBlocks = Array.from(weekMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([weekStart, lines]) => `<p><strong>Semaine du ${formatFrenchDate(weekStart)}</strong></p><ul>${lines.join('')}</ul>`)
-    .join('<br/>')
 
   const mailText = `
 ${prof.prenom} ${prof.nom} a valide son pointage pour la periode ${periode.nom}.

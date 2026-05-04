@@ -44,7 +44,7 @@ function buildEmailBody(prof: Pick<ProfRow, 'prenom' | 'genre' | 'token'>): { te
   const text = [
     `Bonjour ${civilite} ${prof.prenom}`,
     '',
-    'Vous remplir votre pointage pour la periode des cours au printemps 2026 en cliquant sur le lien ci-dessous :',
+    `Vous êtes invité${civilite === 'Monsieur' ? '' : 'e'} à remplir votre pointage pour la periode des cours au printemps 2026 en cliquant sur le lien ci-dessous :`,
     '',
     url,
     '',
